@@ -1,6 +1,21 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Lazily initialize the Resend client so missing env vars won't crash at build time.
+let _resendClient: Resend | null | undefined = undefined
+
+function getResendClient(): Resend | null {
+  if (_resendClient !== undefined) return _resendClient
+
+  const key = process.env.RESEND_API_KEY
+  if (!key) {
+    // Mark as explicitly null so we don't try to recreate every time
+    _resendClient = null
+    return null
+  }
+
+  _resendClient = new Resend(key)
+  return _resendClient
+}
 
 interface StudySession {
   _id: string
@@ -118,6 +133,12 @@ export async function sendStudyReminder(session: StudySession) {
       formatTime(endTime),
       duration
     )
+
+    const resend = getResendClient()
+    if (!resend) {
+      console.warn('Resend API key not configured. Skipping email send for', session.user_email)
+      return { success: false, error: new Error('Resend API key not configured') }
+    }
 
     const { data, error } = await resend.emails.send({
       from: 'Quiet Hours <onboarding@resend.dev>', // Use Resend's test domain for now
